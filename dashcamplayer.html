@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Stable Sync Video Grid</title>
+
+<style>
+body{
+    margin:0;
+    background:#111;
+    color:#fff;
+    font-family:sans-serif;
+    height:100vh;
+    overflow:hidden; /* 🔑 prevents page scrolling */
+    display:flex;
+    flex-direction:column;
+}
+
+.controls{
+    padding:10px;
+    background:#222;
+    flex:0 0 auto;
+}
+
+button{
+    padding:8px 12px;
+    margin-right:5px;
+    cursor:pointer;
+}
+
+.grid{
+    flex:1 1 auto;
+    display:grid;
+    gap:10px;
+    padding:10px;
+
+    /* 🔑 critical: allows shrinking instead of overflow */
+    min-height:0;
+}
+
+/* SIDE-BY-SIDE MODE (auto fit within screen) */
+.grid.grid-row{
+    grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));
+    grid-auto-rows: minmax(0, 1fr);
+}
+
+/* VERTICAL STACK MODE (still fits screen) */
+.grid.grid-col{
+    grid-template-columns:1fr;
+    grid-auto-rows: minmax(0, 1fr);
+}
+
+.video-wrapper{
+    position:relative;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+}
+
+/* 🔑 makes video scale instead of forcing overflow */
+video{
+    width:100%;
+    height:100%;
+    object-fit:contain;  /* keeps aspect ratio, no cropping */
+    background:black;
+}
+</style>
+</head>
+
+<body>
+
+<div class="controls">
+    <input type="file" id="files" multiple accept="video/*">
+    <button onclick="playAll()">Play All</button>
+    <button onclick="pauseAll()">Pause All</button>
+    <button onclick="restartAll()">Restart</button>
+    <button onclick="toggleLayout()">Toggle Layout</button>
+</div>
+
+<div id="grid" class="grid grid-row"></div>
+
+<script>
+
+const grid = document.getElementById("grid");
+const fileInput = document.getElementById("files");
+
+let videos = [];
+let master = null;
+let layoutMode = "row";
+
+fileInput.onchange = e=>{
+    [...e.target.files].forEach(file=>{
+        const url = URL.createObjectURL(file);
+        addVideo(url);
+    });
+};
+
+function addVideo(src){
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "video-wrapper";
+
+    const v = document.createElement("video");
+
+    v.src = src;
+    v.preload = "auto";
+    v.muted = true;
+    v.playsInline = true;
+    v.controls = true;
+
+    wrapper.appendChild(v);
+    grid.appendChild(wrapper);
+
+    videos.push(v);
+
+    if(!master) master = v;
+}
+
+/* ---------- buffer helper ---------- */
+function waitForBuffer(v){
+    return new Promise(res=>{
+        if(v.readyState >= 4){
+            res();
+        }else{
+            v.addEventListener("canplaythrough", ()=>res(), {once:true});
+        }
+    });
+}
+
+/* ---------- sync engine ---------- */
+function sync(){
+
+    if(!master) return;
+
+    const t = master.currentTime;
+    const playing = !master.paused;
+
+    videos.forEach(v=>{
+        if(v === master) return;
+
+        const drift = v.currentTime - t;
+
+        if(Math.abs(drift) > 0.15){
+            v.currentTime = t;
+        }
+
+        v.playbackRate = 1 - drift * 0.5;
+
+        if(playing && v.paused){
+            v.play().catch(()=>{});
+        }
+
+        if(!playing && !v.paused){
+            v.pause();
+        }
+    });
+
+    requestAnimationFrame(sync);
+}
+
+/* ---------- play all ---------- */
+async function playAll(){
+
+    if(!videos.length) return;
+
+    master = videos[0];
+
+    await Promise.all(videos.map(waitForBuffer));
+
+    const start = master.currentTime;
+
+    videos.forEach(v=>{
+        v.currentTime = start;
+    });
+
+    for(const v of videos){
+        try{
+            await v.play();
+        }catch(e){}
+    }
+
+    sync();
+}
+
+function pauseAll(){
+    videos.forEach(v=>v.pause());
+}
+
+function restartAll(){
+
+    if(!videos.length) return;
+
+    const wasPlaying = master && !master.paused;
+
+    videos.forEach(v=>{
+        v.pause();
+        v.currentTime = 0;
+    });
+
+    if(wasPlaying){
+        videos.forEach(v=>{
+            v.play().catch(()=>{});
+        });
+    }
+}
+
+/* ---------- layout toggle ---------- */
+function toggleLayout(){
+
+    layoutMode = (layoutMode === "row") ? "col" : "row";
+
+    grid.classList.remove("grid-row", "grid-col");
+    grid.classList.add(layoutMode === "row" ? "grid-row" : "grid-col");
+}
+
+</script>
+
+</body>
+</html>
