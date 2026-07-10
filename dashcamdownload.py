@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import sys
 import time
 import logging
 import argparse
-import subprocess
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -44,7 +42,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger("dashcam-v2")
+logger = logging.getLogger("dashcam")
 
 
 # ============================================================
@@ -56,7 +54,7 @@ class DashcamClient:
         self.base_url = base_url.rstrip("/")
         self.session = requests.Session()
         self.session.headers.update({
-            "User-Agent": "Mozilla/5.0 DashcamTransporterV2"
+            "User-Agent": "Mozilla/5.0 DashcamDownloader"
         })
 
         # warm-up (important for firmware cookie quirks)
@@ -68,14 +66,14 @@ class DashcamClient:
     def list_files(self):
         folders = [
             ("/DCIM/Movie", "video"),
-            ("/DCIM/Movie/RO", "video"),
-            ("/DCIM/Movie/Parking", "video"),
+            ("/DCIM/Movie/RO", "video/RO"),
+            ("/DCIM/Movie/Parking", "video/Parking"),
             ("/DCIM/Photo", "photo"),
         ]
 
         files = []
 
-        for folder, ftype in folders:
+        for folder, dest_dir in folders:
             url = self.base_url + folder
 
             try:
@@ -97,7 +95,7 @@ class DashcamClient:
                     files.append({
                         "name": name,
                         "url": full,
-                        "type": ftype
+                        "dest_dir": dest_dir
                     })
 
             except Exception as e:
@@ -189,29 +187,8 @@ class ResilientDownloader:
 
                 time.sleep(min(2 ** attempt, 30))
 
-        # ====================================================
-        # CURL FALLBACK
-        # ====================================================
-
-        logger.warning("Falling back to curl for reliability")
-
-        try:
-            subprocess.run([
-                "curl",
-                "-L",
-                "--fail",
-                "--retry", "5",
-                "--retry-delay", "2",
-                "-o", str(dest),
-                url
-            ], check=True)
-
-            logger.info(f"curl success: {dest.name}")
-            return True
-
-        except Exception as e:
-            logger.error(f"curl fallback failed: {e}")
-            return False
+        logger.error(f"Failed to download {dest.name} after {max_retries} attempts")
+        return False
 
 
 # ============================================================
@@ -226,7 +203,7 @@ class Transporter:
         self.onlydelete = onlydelete
 
     def run(self):
-        logger.info("Dashcam Transporter v2 starting")
+        logger.info("Dashcam Downloader starting")
         logger.info(f"Target: {self.client.base_url}")
 
         files = self.client.list_files()
@@ -249,7 +226,7 @@ class Transporter:
             return
 
         for f in files:
-            dest = self.root / f["type"] / f["name"]
+            dest = self.root / Path(f["dest_dir"]) / f["name"]
 
             if dest.exists():
                 logger.info(f"Skip existing: {f['name']}")
