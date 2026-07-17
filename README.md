@@ -1,3 +1,5 @@
+Edit: found an open ftp port on the camera, accessed it and refactored downloader as a bash script to simplify things via ftp instead of html scraping.
+
 I sought a dashcam with some sort of link to PC(linux). Viofo seemed like the only reasonably priced option, having a wifi station mode enabling a pc to connect through a web browser.
 the ultimate goal was to get to full automatic downloads to a NAS for review and storage, at this moment the only interaction required is enabling the wifi station mode.
 this repository contains the python required to pull the files from the camera, manually triggered or by cron or some other automation.
